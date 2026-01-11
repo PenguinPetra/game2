@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>体を動かして読み取れ！神経衰弱</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="background" id="bg-img"></div>
+
+    <div class="container">
+        <div id="title-screen" onclick="showMenu()">
+            <div class="title-area">
+                <span class="title-small">体を動かして読み取れ！</span>
+                <span class="title-ruby">しんけいすいじゃく</span>
+                <h1 class="title-large" id="main-title">神経衰弱</h1>
+                <p class="tap-to-start" id="start-msg">クリックしてスタート</p>
+            </div>
+        </div>
+
+        <div id="menu-screen" class="hidden">
+            <div class="menu-buttons">
+                <button class="btn btn-start" onclick="openModal('start')">ゲーム開始</button>
+                <button class="btn btn-rules" onclick="openModal('rules')">ルール説明</button>
+                <button class="btn btn-settings" onclick="openModal('settings')">設定</button>
+            </div>
+        </div>
+
+        <div id="info-modal" class="modal hidden">
+            <div class="modal-content">
+                <h2 id="modal-title">タイトル</h2>
+                <div id="modal-body">コンテンツ</div>
+                <button class="btn-close" onclick="closeModal()">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
