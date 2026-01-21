@@ -28,11 +28,15 @@ function backToTitle() {
     document.getElementById('bg-img').classList.remove('bg-dimmed');
 }
 
-// モーダル制御（★修正：引数 content を追加）
+// モーダル制御（★修正：結果表示と指令を分離して表示できるように改良）
 function openModal(type, content = null) {
     const modal = document.getElementById('info-modal');
     const title = document.getElementById('modal-title');
     const body = document.getElementById('modal-body');
+
+    // 初期化
+    title.innerText = "情報";
+    body.innerHTML = "";
 
     if (type === 'rules') {
         title.innerText = "ルール説明";
@@ -40,11 +44,32 @@ function openModal(type, content = null) {
     } else if (type === 'settings') {
         title.innerText = "設定";
         body.innerHTML = "<p>BGM: ON<br>難易度: ノーマル<br>（現在変更できません）</p>";
-    } else if (type === 'mission') {
-        // ★追加：指令表示用
-        title.innerText = "🏃 指令発生！ 🏃";
-        body.innerHTML = `<p style="font-size:1.2rem; font-weight:bold; color:#d00; line-height:1.5;">${content}</p>`;
+    } else if (type === 'mission_with_result') {
+        // ★修正点：【上】ゲーム結果 / 【下】指令 の2段構成で表示
+        title.innerText = "⚡ イベント発生 ⚡";
+        
+        // content は { result: "...", mission: "..." } のオブジェクトとして受け取る
+        const resultHtml = `
+            <div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px dashed #ccc;">
+                <p style="font-size: 1.1rem; color: #333; margin-bottom: 5px;">▼ カードの結果 ▼</p>
+                <p style="font-size: 1.5rem; font-weight: bold; color: #000; line-height: 1.4;">
+                    ${content.result.replace(/\n/g, '<br>')}
+                </p>
+            </div>
+        `;
+
+        const missionHtml = `
+            <div>
+                <p style="font-size: 1.1rem; color: #d00; font-weight: bold; margin-bottom: 5px;">⚠️ 指令発生！ ⚠️</p>
+                <p style="font-size: 1.2rem; font-weight: bold; color: #d00; line-height: 1.4;">
+                    ${content.mission}
+                </p>
+            </div>
+        `;
+
+        body.innerHTML = resultHtml + missionHtml;
     }
+
     modal.classList.remove('hidden');
 }
 
@@ -65,7 +90,7 @@ const suits = [
 ];
 const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
-// ★追加：特殊効果（運動の指令）リスト
+// 特殊効果（運動の指令）リスト
 const MOVEMENT_MISSIONS = [
     "次のカードをスキャンするまで、\n3歩あるく度にスクワットを一回せよ！",
     "次のカードをスキャンするまで、\n太ももを地面と平行になるぐらい上げて歩け！",
@@ -117,7 +142,6 @@ function initGame() {
     const urlParams = new URLSearchParams(window.location.search);
     const scannedId = urlParams.get('id');
     if (scannedId !== null) {
-        // QRから直接飛んできた場合はゲーム画面を即表示
         showMenu(); 
         startGame();
         handleScan(parseInt(scannedId));
@@ -127,7 +151,7 @@ function initGame() {
     renderGrid();
 }
 
-// ダイアログ
+// ダイアログ（トースト通知）
 function showMessage(text) {
     if (!isMessageEnabled) return;
     const overlay = document.getElementById('custom-dialog');
@@ -146,7 +170,6 @@ function startScanner() {
     container.style.display = 'block';
     document.getElementById('close-scan-btn').style.display = 'inline-block';
 
-    // インスタンスがなければ作成、あれば既存を使用
     if (!html5QrCode) {
         html5QrCode = new Html5Qrcode("reader");
     }
@@ -158,7 +181,6 @@ function startScanner() {
         isScanning = true;
     })
     .catch(err => {
-        // 起動失敗時はUIを隠すなどの処理
         container.style.display = 'none';
         showMessage("カメラ起動エラー: " + err);
     });
@@ -169,11 +191,11 @@ function stopScanner() {
     
     if (html5QrCode && isScanning) {
         html5QrCode.stop().then(() => {
-            isScanning = false; // フラグをOFF
+            isScanning = false; 
             html5QrCode.clear();
         }).catch(err => {
             console.error("停止エラー:", err);
-            isScanning = false; // エラーでも一応OFFにしておく
+            isScanning = false; 
         });
     }
 }
@@ -221,27 +243,59 @@ function handleScan(index) {
         return;
     }
 
+    // カードをめくる処理
     gameState.flippedCards.push(index);
     saveState();
     renderGrid();
 
-    // ★追加：ランダム指令の発動
-    // カードをめくった瞬間に指令を表示
-    const randomMission = MOVEMENT_MISSIONS[Math.floor(Math.random() * MOVEMENT_MISSIONS.length)];
-    openModal('mission', randomMission);
-
     const card = deck[index];
-    document.getElementById('status-text').textContent = `出たカード: ${card.displayName}`;
-    
+    let resultMessage = `出たカード: ${card.displayName}`;
+    let isPairCheckNeeded = false;
+
+    // ★修正：2枚目の場合は、結果を先取りしてメッセージを作成
     if (gameState.flippedCards.length === 2) {
-        setTimeout(checkMatch, 500);
+        const [id1, id2] = gameState.flippedCards;
+        const card1 = deck[id1];
+        const card2 = deck[id2];
+        if (card1.rank === card2.rank) {
+            resultMessage = `🎉 ペア成立！\n${card1.displayName} と ${card2.displayName}`;
+        } else {
+            resultMessage = `😢 残念、ハズレ！\n${card1.displayName} と ${card2.displayName}`;
+        }
+        isPairCheckNeeded = true;
     } else {
-        // 指令が出るので、ここでのshowMessageは少し控えめに（あるいは削除しても良いですが残します）
-        // showMessage(`1枚目: ${card.displayName}\n次のカードを探してください！`);
+        resultMessage = `1枚目: ${card.displayName}\n次のカードを探そう！`;
+    }
+
+    document.getElementById('status-text').textContent = `出たカード: ${card.displayName}`;
+
+    // ★修正：指令の発生判定（確率 35%）
+    // Math.random() < 0.35 で約3回に1回の頻度になります。
+    const isMissionTriggered = Math.random() < 0.35; 
+
+    if (isMissionTriggered) {
+        // 指令発生時：モーダルで「結果」と「指令」を同時に表示
+        const randomMission = MOVEMENT_MISSIONS[Math.floor(Math.random() * MOVEMENT_MISSIONS.length)];
+        openModal('mission_with_result', {
+            result: resultMessage,
+            mission: randomMission
+        });
+    } else {
+        // 通常時：トーストメッセージで結果のみ表示
+        showMessage(resultMessage);
+    }
+    
+    // ペア判定処理の実行（少し遅らせて実行）
+    if (isPairCheckNeeded) {
+        // 指令モーダルが出ている場合は、メッセージ重複を避けるため showMessage を抑制する引数を渡すなどの工夫が可能ですが、
+        // 今回はシンプルに checkMatch 内の showMessage も走らせます（モーダルの裏でトーストが出る形）。
+        // ただし、もし完全に消したい場合は checkMatch(!isMissionTriggered) のようにフラグを渡す必要があります。
+        // ここでは、裏で状態を確定させるために呼び出します。
+        setTimeout(() => checkMatch(isMissionTriggered), 500);
     }
 }
 
-function checkMatch() {
+function checkMatch(suppressMessage = false) {
     const [id1, id2] = gameState.flippedCards;
     const card1 = deck[id1];
     const card2 = deck[id2];
@@ -251,9 +305,14 @@ function checkMatch() {
     if (isMatch) {
         gameState.foundPairs.push(id1, id2);
         gameState.flippedCards = []; 
-        showMessage(`🎉 ペア成立！\n${card1.displayName} と ${card2.displayName}`);
+        if (!suppressMessage) {
+            showMessage(`🎉 ペア成立！\n${card1.displayName} と ${card2.displayName}`);
+        }
     } else {
-        showMessage(`😢 残念、ハズレ！\n${card1.displayName} と ${card2.displayName}`);
+        // ハズレの場合
+        if (!suppressMessage) {
+            showMessage(`😢 残念、ハズレ！\n${card1.displayName} と ${card2.displayName}`);
+        }
     }
     saveState();
     renderGrid();
@@ -283,7 +342,11 @@ function renderGrid() {
 
     if (gameState.foundPairs.length === deck.length && deck.length > 0) {
         document.getElementById('status-text').textContent = "🎊 全制覇！おめでとう！ 🎊";
-        showMessage("🎊 全制覇！おめでとうございます！ 🎊");
+        // クリア時は必ずお祝いを出す
+        openModal('mission_with_result', {
+            result: "🎊 全制覇！おめでとう！ 🎊",
+            mission: "最後の指令：<br>深呼吸して、自分に拍手！👏"
+        });
     }
 }
 
