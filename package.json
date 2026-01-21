@@ -1,0 +1,24 @@
+{
+  "name": "card_game_app",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kai-1208/card_game_app.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/kai-1208/card_game_app/issues"
+  },
+  "homepage": "https://github.com/kai-1208/card_game_app#readme",
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  }
+}
