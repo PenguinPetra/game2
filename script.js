@@ -1,201 +1,4 @@
 /* =========================================
-   定数・設定
-   ========================================= */
-const STORAGE_KEY = 'nervous_breakdown_state';
-const suits = [
-    { mark: '♠', color: 'black', displayName: 'スペード' },
-    { mark: '♣', color: 'black', displayName: 'クラブ' },
-    { mark: '♥', color: 'red', displayName: 'ハート' },
-    { mark: '♦', color: 'red', displayName: 'ダイヤ' }
-];
-const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-
-// ★追加機能：特殊効果（運動の指令）リスト
-const MOVEMENT_MISSIONS = [
-    "次のカードをスキャンするまで、\n3歩あるく度にスクワットを一回せよ！",
-    "次のカードをスキャンするまで、\n太ももを地面と平行になるぐらい上げて歩け！",
-    "次のカードをスキャンするまで、\nスキップで移動せよ！",
-    "次のカードをスキャンするまで、\nカニ歩き（横歩き）で移動せよ！",
-    "次のカードをスキャンするまで、\n両手を挙げて「バンザイ」の姿勢で移動せよ！",
-    "次のカードをスキャンするまで、\n後ろ歩き（気をつけて！）で移動せよ！",
-    "次のカードをスキャンするまで、\n常に笑顔をキープして移動せよ！",
-    "その場で10回ジャンプしてから、\n次のカードを探しに行け！"
-];
-
-/* =========================================
-   グローバル変数
-   ========================================= */
-let deck = [];
-let gameState = {
-    foundPairs: [],     // ペア成立したカードID
-    flippedCards: []    // 現在めくられているカードID（最大2枚）
-};
-let html5QrCode = null;
-let isScanning = false;
-let isMessageEnabled = true; // メッセージ表示設定
-
-/* =========================================
-   初期化・ロード処理
-   ========================================= */
-window.onload = () => {
-    loadState();
-    
-    // 初回起動時などでデッキが空なら初期化
-    if (deck.length === 0) {
-        initGame();
-    } else {
-        renderGrid();
-    }
-    
-    updateToggleButton();
-};
-
-/* =========================================
-   ゲームロジック
-   ========================================= */
-
-// ゲーム初期化（カード生成・シャッフル）
-function initGame() {
-    deck = [];
-    let idCounter = 0;
-    // generate_qr.js の生成順序に合わせてIDを割り当て (Suit -> Rank)
-    for (const suit of suits) {
-        for (const rank of ranks) {
-            deck.push({
-                id: idCounter++,
-                suit: suit.mark,
-                rank: rank,
-                color: suit.color,
-                displayName: `${suit.mark} ${rank}`,
-                isOpen: false,
-                isMatched: false
-            });
-        }
-    }
-    // デッキはシャッフルせず、IDがQRコードと紐付いているため固定配置とする
-    // ※「神経衰弱」としてのランダム性は「部屋への配置」で担保するか、
-    //   あるいはここで中身をシャッフルするかですが、
-    //   QRのIDとカード内容を固定するためにシャッフルは表示上のみで行うのが一般的。
-    //   今回はシンプルに「ID=カード」の対応を変えずに進めます。
-
-    gameState = { foundPairs: [], flippedCards: [] };
-    saveState();
-    renderGrid();
-    showMessage("ゲームを開始します！部屋のカードを探そう！");
-}
-
-// QRコード読み取り処理
-function processScan(scannedText) {
-    // URLパラメータからIDを抽出 (例: ...?id=5)
-    let cardId = null;
-    try {
-        const url = new URL(scannedText);
-        const params = new URLSearchParams(url.search);
-        if (params.has('id')) {
-            cardId = parseInt(params.get('id'), 10);
-        }
-    } catch (e) {
-        // URLでない場合、直接数字が書かれているかも考慮
-        if (!isNaN(scannedText)) {
-            cardId = parseInt(scannedText, 10);
-        }
-    }
-
-    if (cardId === null || isNaN(cardId) || cardId < 0 || cardId >= deck.length) {
-        showMessage("無効なQRコードです: " + scannedText);
-        return;
-    }
-
-    const card = deck[cardId];
-
-    // すでにマッチ済み、または既にめくられている場合は無視
-    if (gameState.foundPairs.includes(cardId)) {
-        showMessage(`そのカード (${card.displayName}) は既にゲットしています！`);
-        return;
-    }
-    if (gameState.flippedCards.includes(cardId)) {
-        showMessage(`そのカード (${card.displayName}) は既にめくれています。`);
-        return;
-    }
-
-    // カードをめくる処理
-    handleCardFlip(cardId);
-}
-
-// カードをめくった後の判定
-function handleCardFlip(id) {
-    // 2枚すでにめくられていたら、それをリセットしてから新しいのをめくる（連続スキャン対策）
-    if (gameState.flippedCards.length >= 2) {
-        // マッチしなかったカードを裏返す
-        gameState.flippedCards = []; 
-        renderGrid();
-    }
-
-    gameState.flippedCards.push(id);
-    renderGrid(); // 画面更新
-
-    // ★追加機能：カードをスキャンしたら指令を表示（モーダル）
-    // 1枚目でも2枚目でも、スキャンするたびに運動させるならここで表示
-    showMissionModal();
-
-    // 2枚めくった場合の判定
-    if (gameState.flippedCards.length === 2) {
-        checkForMatch();
-    } else {
-        // 1枚目の場合
-        showMessage(`1枚目: ${deck[id].displayName} です。もう1枚探そう！`);
-        saveState();
-    }
-}
-
-// ★追加機能：ランダムな指令を表示する関数
-function showMissionModal() {
-    const randomIndex = Math.floor(Math.random() * MOVEMENT_MISSIONS.length);
-    const mission = MOVEMENT_MISSIONS[randomIndex];
-    
-    // 既存のモーダル機能を使って表示
-    // 第2引数(content)を渡せるように openModal を拡張して利用
-    openModal('mission', mission);
-}
-
-// ペア判定
-function checkForMatch() {
-    const [id1, id2] = gameState.flippedCards;
-    const card1 = deck[id1];
-    const card2 = deck[id2];
-
-    // 数字(rank)が同じならマッチ
-    if (card1.rank === card2.rank) {
-        // マッチ成功
-        gameState.foundPairs.push(id1);
-        gameState.foundPairs.push(id2);
-        gameState.flippedCards = []; // めくりリストからは削除
-        saveState();
-        
-        // 少し遅らせて祝福メッセージ
-        setTimeout(() => {
-            renderGrid(); // マッチ確定色に更新
-            // 全クリア判定
-            if (gameState.foundPairs.length === deck.length) {
-                document.getElementById('status-text').textContent = "🎊 全制覇！おめでとう！ 🎊";
-                openModal('mission', "🎉 おめでとう！ゲームクリア！ 🎉<br>最後に深呼吸をして終了しよう！");
-            } else {
-                showMessage(`ペア成立！ ${card1.rank} のペア！`);
-            }
-        }, 500);
-
-    } else {
-        // マッチ失敗
-        saveState();
-        setTimeout(() => {
-            showMessage("残念、不一致…。");
-            // 次のスキャン時に裏返るので、ここでは何もしないか、
-            // あるいは明示的に「次をスキャンすると裏返ります」と出す
-        }, 500);
-    }
-}
-
-/* =========================================
    UI/画面遷移ロジック
    ========================================= */
 
@@ -211,8 +14,10 @@ function startGame() {
     document.getElementById('menu-screen').classList.add('hidden');
     document.getElementById('game-screen').classList.remove('hidden');
     
-    // カメラ起動
-    startScanner();
+    // ゲームの初期化処理を実行
+    if (deck.length === 0) {
+        initGame(); 
+    }
 }
 
 // ゲーム画面 -> タイトル（戻るボタン）
@@ -223,125 +28,237 @@ function backToTitle() {
     document.getElementById('bg-img').classList.remove('bg-dimmed');
 }
 
-// モーダル制御（★拡張：content引数を追加）
+// モーダル制御（★修正：引数 content を追加）
 function openModal(type, content = null) {
     const modal = document.getElementById('info-modal');
     const title = document.getElementById('modal-title');
     const body = document.getElementById('modal-body');
 
-    modal.classList.remove('hidden');
-
     if (type === 'rules') {
         title.innerText = "ルール説明";
-        body.innerHTML = `
-            <p style='text-align:left;'>
-            1. 部屋に設置したQRコードまで移動しよう。<br>
-            2. 「スキャン」ボタンでQRを読み取る。<br>
-            3. トランプが表示されるよ。<br>
-            4. 同じ数字を見つけてペアを作ろう！<br>
-            <br>
-            <b>★特別ルール★</b><br>
-            カードをスキャンすると「指令」が出るぞ！<br>
-            指令に従って次のカードへ向かおう！
-            </p>`;
+        body.innerHTML = "<p style='text-align:left;'>1. 部屋に設置したQRコードまで移動しよう。<br>2. 「スキャン」ボタンでQRを読み取る。<br>3. トランプが表示されるよ。<br>4. 同じ数字を見つけてペアを作ろう！</p>";
+    } else if (type === 'settings') {
+        title.innerText = "設定";
+        body.innerHTML = "<p>BGM: ON<br>難易度: ノーマル<br>（現在変更できません）</p>";
     } else if (type === 'mission') {
         // ★追加：指令表示用
         title.innerText = "🏃 指令発生！ 🏃";
-        body.innerHTML = `<p style="font-size:1.2rem; font-weight:bold; color:#d00;">${content}</p>`;
-    } else {
-        title.innerText = "情報";
-        body.innerHTML = content ? content : "";
+        body.innerHTML = `<p style="font-size:1.2rem; font-weight:bold; color:#d00; line-height:1.5;">${content}</p>`;
     }
+    modal.classList.remove('hidden');
 }
 
 function closeModal() {
     document.getElementById('info-modal').classList.add('hidden');
 }
 
-/* =========================================
-   カメラスキャン関連 (html5-qrcode)
-   ========================================= */
-function startScanner() {
-    const readerContainer = document.getElementById('reader');
-    // すでに起動中なら何もしない
-    if(html5QrCode) return;
 
-    // スキャンエリアを表示
-    document.getElementById('reader-container').style.display = 'block';
-    document.getElementById('scan-btn').style.display = 'none'; // ボタンは隠す
+/* =========================================
+   神経衰弱 ゲームロジック
+   ========================================= */
+
+const suits = [
+    { mark: '♠', color: 'black', name: 'spade' },
+    { mark: '♣', color: 'black', name: 'club' },
+    { mark: '♥', color: 'red', name: 'heart' },
+    { mark: '♦', color: 'red', name: 'diamond' }
+];
+const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+
+// ★追加：特殊効果（運動の指令）リスト
+const MOVEMENT_MISSIONS = [
+    "次のカードをスキャンするまで、\n3歩あるく度にスクワットを一回せよ！",
+    "次のカードをスキャンするまで、\n太ももを地面と平行になるぐらい上げて歩け！",
+    "次のカードをスキャンするまで、\nスキップで移動せよ！",
+    "次のカードをスキャンするまで、\nカニ歩き（横歩き）で移動せよ！",
+    "次のカードをスキャンするまで、\n両手を挙げて「バンザイ」の姿勢で移動せよ！",
+    "次のカードをスキャンするまで、\n後ろ歩き（気をつけて！）で移動せよ！",
+    "次のカードをスキャンするまで、\n常に笑顔をキープして移動せよ！",
+    "その場で10回ジャンプしてから、\n次のカードを探しに行け！"
+];
+
+let deck = [];
+let gameState = {
+    foundPairs: [],
+    flippedCards: []
+};
+const STORAGE_KEY = 'walkingTrumpGame_52';
+let html5QrCode; 
+let isMessageEnabled = true;
+let isScanning = false;
+
+// ゲーム初期化
+function initGame() {
+    // デッキ生成
+    deck = [];
+    let idCounter = 0;
+    suits.forEach(suit => {
+        ranks.forEach(rank => {
+            deck.push({
+                id: idCounter++,
+                suit: suit.mark,
+                color: suit.color,
+                rank: rank,
+                displayName: `${suit.mark}${rank}`
+            });
+        });
+    });
+
+    loadState();
+    
+    // メッセージ設定の復元
+    const savedSetting = localStorage.getItem('msgSetting');
+    if (savedSetting !== null) {
+        isMessageEnabled = (savedSetting === 'true');
+    }
+    updateToggleButton();
+
+    // QRパラメータ判定（直リンクの場合）
+    const urlParams = new URLSearchParams(window.location.search);
+    const scannedId = urlParams.get('id');
+    if (scannedId !== null) {
+        // QRから直接飛んできた場合はゲーム画面を即表示
+        showMenu(); 
+        startGame();
+        handleScan(parseInt(scannedId));
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    renderGrid();
+}
+
+// ダイアログ
+function showMessage(text) {
+    if (!isMessageEnabled) return;
+    const overlay = document.getElementById('custom-dialog');
+    const content = document.getElementById('dialog-content');
+    content.textContent = text;
+    overlay.classList.add('show');
+    setTimeout(() => { overlay.classList.remove('show'); }, 2500);
+}
+
+// スキャナー処理
+document.getElementById('scan-btn').addEventListener('click', startScanner);
+document.getElementById('close-scan-btn').addEventListener('click', stopScanner);
+
+function startScanner() {
+    const container = document.getElementById('reader-container');
+    container.style.display = 'block';
     document.getElementById('close-scan-btn').style.display = 'inline-block';
 
-    html5QrCode = new Html5Qrcode("reader");
+    // インスタンスがなければ作成、あれば既存を使用
+    if (!html5QrCode) {
+        html5QrCode = new Html5Qrcode("reader");
+    }
+
     const config = { fps: 10, qrbox: { width: 250, height: 250 } };
     
-    html5QrCode.start(
-        { facingMode: "environment" }, // リアカメラ優先
-        config,
-        (decodedText, decodedResult) => {
-            // スキャン成功時
-            console.log(`Scan result: ${decodedText}`);
-            // 連続読み取り防止のため一時停止するか、UIで制御
-            processScan(decodedText);
-            
-            // 一度読んだら少し止める？今回は連続スキャンしたいので止めないが、
-            // 誤検知が多い場合は stopScanner() を呼んでから processScan してもよい。
-            // ここでは使い勝手を考慮し、「閉じる」までカメラは動かし続けるが、
-            // ダイアログが出ている間は裏で読み込みが走らないように工夫が必要かも。
-            // 簡易的に、モーダル表示中は無視するように修正するとより良い。
-            if(!document.getElementById('info-modal').classList.contains('hidden')) {
-                return; 
-            }
-        },
-        (errorMessage) => {
-            // 読み取り待機中エラーは無視
-        }
-    ).catch(err => {
-        console.error("Camera start failed", err);
-        showMessage("カメラの起動に失敗しました。");
+    html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess)
+    .then(() => {
+        isScanning = true;
+    })
+    .catch(err => {
+        // 起動失敗時はUIを隠すなどの処理
+        container.style.display = 'none';
+        showMessage("カメラ起動エラー: " + err);
     });
 }
 
 function stopScanner() {
-    if (html5QrCode) {
+    document.getElementById('reader-container').style.display = 'none';
+    
+    if (html5QrCode && isScanning) {
         html5QrCode.stop().then(() => {
+            isScanning = false; // フラグをOFF
             html5QrCode.clear();
-            html5QrCode = null;
-        }).catch(err => console.error("Failed to stop scanner", err));
+        }).catch(err => {
+            console.error("停止エラー:", err);
+            isScanning = false; // エラーでも一応OFFにしておく
+        });
     }
-    document.getElementById('reader-container').style.display = 'none'; // エリアを隠す（必要に応じて）
-    
-    // UIをスキャンボタンに戻す（常時カメラオンにするならこの処理は調整）
-    document.getElementById('scan-btn').style.display = 'inline-block';
-    document.getElementById('close-scan-btn').style.display = 'none';
 }
 
-// ボタンイベント設定
-document.getElementById('scan-btn').addEventListener('click', startScanner);
-document.getElementById('close-scan-btn').addEventListener('click', stopScanner);
+function onScanSuccess(decodedText, decodedResult) {
+    stopScanner();
+    try {
+        let idVal = null;
+        if (decodedText.includes('?')) {
+            const urlObj = new URL(decodedText);
+            idVal = urlObj.searchParams.get('id');
+        } 
+        if (!idVal && !isNaN(decodedText)) idVal = decodedText;
 
-
-/* =========================================
-   描画・ユーティリティ
-   ========================================= */
-
-// ダイアログ表示（トースト的なもの）
-function showMessage(msg) {
-    if (!isMessageEnabled) return;
-
-    const dialog = document.getElementById('custom-dialog');
-    const content = document.getElementById('dialog-content');
-    
-    // すでに表示されていても内容を更新
-    content.textContent = msg;
-    dialog.classList.remove('hidden');
-
-    // 3秒後に消える
-    setTimeout(() => {
-        dialog.classList.add('hidden');
-    }, 3000);
+        if (idVal !== null) {
+            handleScan(parseInt(idVal));
+        } else {
+            showMessage("無効なQRコードです");
+        }
+    } catch (e) {
+        showMessage("読み取りエラー");
+    }
 }
 
-// グリッド描画
+// ゲーム進行
+function handleScan(index) {
+    if (index < 0 || index >= deck.length) {
+        showMessage("無効なカードIDです");
+        return;
+    }
+    
+    if (gameState.foundPairs.includes(index)) {
+        showMessage(`【${deck[index].displayName}】\n獲得済みです`);
+        return;
+    }
+
+    // 前のターンのハズレをリセット
+    if (gameState.flippedCards.length === 2) {
+        gameState.flippedCards = [];
+        renderGrid();
+    }
+
+    if (gameState.flippedCards.includes(index)) {
+        showMessage(`【${deck[index].displayName}】\n既にめくっています`);
+        return;
+    }
+
+    gameState.flippedCards.push(index);
+    saveState();
+    renderGrid();
+
+    // ★追加：ランダム指令の発動
+    // カードをめくった瞬間に指令を表示
+    const randomMission = MOVEMENT_MISSIONS[Math.floor(Math.random() * MOVEMENT_MISSIONS.length)];
+    openModal('mission', randomMission);
+
+    const card = deck[index];
+    document.getElementById('status-text').textContent = `出たカード: ${card.displayName}`;
+    
+    if (gameState.flippedCards.length === 2) {
+        setTimeout(checkMatch, 500);
+    } else {
+        // 指令が出るので、ここでのshowMessageは少し控えめに（あるいは削除しても良いですが残します）
+        // showMessage(`1枚目: ${card.displayName}\n次のカードを探してください！`);
+    }
+}
+
+function checkMatch() {
+    const [id1, id2] = gameState.flippedCards;
+    const card1 = deck[id1];
+    const card2 = deck[id2];
+
+    const isMatch = (card1.rank === card2.rank);
+
+    if (isMatch) {
+        gameState.foundPairs.push(id1, id2);
+        gameState.flippedCards = []; 
+        showMessage(`🎉 ペア成立！\n${card1.displayName} と ${card2.displayName}`);
+    } else {
+        showMessage(`😢 残念、ハズレ！\n${card1.displayName} と ${card2.displayName}`);
+    }
+    saveState();
+    renderGrid();
+}
+
 function renderGrid() {
     const grid = document.getElementById('card-grid');
     grid.innerHTML = '';
@@ -349,16 +266,13 @@ function renderGrid() {
     deck.forEach(card => {
         const div = document.createElement('div');
         div.className = 'card';
-        div.dataset.id = card.id;
-
-        // 状態判定
+        
+        const isOpen = gameState.foundPairs.includes(card.id) || gameState.flippedCards.includes(card.id);
         const isMatched = gameState.foundPairs.includes(card.id);
-        const isFlipped = gameState.flippedCards.includes(card.id);
-        const isOpen = isMatched || isFlipped;
 
         if (isOpen) {
             div.classList.add('open');
-            div.classList.add(card.color); // red or black
+            div.classList.add(card.color);
             div.textContent = card.displayName;
         }
         if (isMatched) {
@@ -366,6 +280,11 @@ function renderGrid() {
         }
         grid.appendChild(div);
     });
+
+    if (gameState.foundPairs.length === deck.length && deck.length > 0) {
+        document.getElementById('status-text').textContent = "🎊 全制覇！おめでとう！ 🎊";
+        showMessage("🎊 全制覇！おめでとうございます！ 🎊");
+    }
 }
 
 // ユーティリティ
@@ -384,14 +303,13 @@ function updateToggleButton() {
 document.getElementById('reset-btn').addEventListener('click', () => {
     if(confirm("リセットしますか？")) {
         localStorage.removeItem(STORAGE_KEY);
-        // デッキ再生成も含めてリセット
-        initGame();
+        gameState = { foundPairs: [], flippedCards: [] };
+        renderGrid();
+        showMessage("リセットしました");
     }
 });
 
 function saveState() {
-    // deckの状態も含めて保存したほうが安全だが、今回は進行状況のみ
-    // もしシャッフルを実装するならdeckの並び順も保存が必要
     localStorage.setItem(STORAGE_KEY, JSON.stringify(gameState));
 }
 
@@ -400,9 +318,7 @@ function loadState() {
     if (saved) {
         gameState = JSON.parse(saved);
     }
-    
-    const msgSetting = localStorage.getItem('msgSetting');
-    if (msgSetting !== null) {
-        isMessageEnabled = (msgSetting === 'true');
-    }
 }
+
+// ページ読み込み時はinitGameだけしておく（画面はタイトル）
+window.onload = initGame;
