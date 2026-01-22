@@ -2,6 +2,36 @@
    UI/画面遷移ロジック
    ========================================= */
 
+// タイトル演出アニメーション
+function playTitleAnimation() {
+    const flash = document.getElementById('flash-effect');
+    const line1 = document.getElementById('title-line-1');
+    const line2 = document.getElementById('title-line-2');
+    const ruby = document.getElementById('title-ruby');
+    const startMsg = document.getElementById('start-msg');
+
+    // 1. 最初のフラッシュと一行目表示
+    setTimeout(() => {
+        flash.classList.add('do-flash');
+        line1.classList.add('visible');
+    }, 500);
+
+    // 2. 二回目のフラッシュとふりがな・二行目表示
+    setTimeout(() => {
+        flash.classList.remove('do-flash');
+        void flash.offsetWidth; // アニメーションを再起動させるためのハック
+        flash.classList.add('do-flash');
+        
+        ruby.classList.add('visible');
+        line2.classList.add('visible');
+    }, 1500);
+
+    // 3. スタートメッセージ表示
+    setTimeout(() => {
+        startMsg.classList.add('visible');
+    }, 2500);
+}
+
 // タイトル -> メニュー
 function showMenu() {
     document.getElementById('bg-img').classList.add('bg-dimmed');
@@ -28,13 +58,12 @@ function backToTitle() {
     document.getElementById('bg-img').classList.remove('bg-dimmed');
 }
 
-// モーダル制御（★修正：結果表示と指令を分離して表示できるように改良）
+// モーダル制御
 function openModal(type, content = null) {
     const modal = document.getElementById('info-modal');
     const title = document.getElementById('modal-title');
     const body = document.getElementById('modal-body');
 
-    // 初期化
     title.innerText = "情報";
     body.innerHTML = "";
 
@@ -45,10 +74,8 @@ function openModal(type, content = null) {
         title.innerText = "設定";
         body.innerHTML = "<p>BGM: ON<br>難易度: ノーマル<br>（現在変更できません）</p>";
     } else if (type === 'mission_with_result') {
-        // ★修正点：【上】ゲーム結果 / 【下】指令 の2段構成で表示
         title.innerText = "⚡ イベント発生 ⚡";
         
-        // content は { result: "...", mission: "..." } のオブジェクトとして受け取る
         const resultHtml = `
             <div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px dashed #ccc;">
                 <p style="font-size: 1.1rem; color: #333; margin-bottom: 5px;">▼ カードの結果 ▼</p>
@@ -66,17 +93,14 @@ function openModal(type, content = null) {
                 </p>
             </div>
         `;
-
         body.innerHTML = resultHtml + missionHtml;
     }
-
     modal.classList.remove('hidden');
 }
 
 function closeModal() {
     document.getElementById('info-modal').classList.add('hidden');
 }
-
 
 /* =========================================
    神経衰弱 ゲームロジック
@@ -90,7 +114,6 @@ const suits = [
 ];
 const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
-// 特殊効果（運動の指令）リスト
 const MOVEMENT_MISSIONS = [
     "次のカードをスキャンするまで、\n3歩あるく度にスクワットを一回せよ！",
     "次のカードをスキャンするまで、\n太ももを地面と平行になるぐらい上げて歩け！",
@@ -112,9 +135,7 @@ let html5QrCode;
 let isMessageEnabled = true;
 let isScanning = false;
 
-// ゲーム初期化
 function initGame() {
-    // デッキ生成
     deck = [];
     let idCounter = 0;
     suits.forEach(suit => {
@@ -131,14 +152,12 @@ function initGame() {
 
     loadState();
     
-    // メッセージ設定の復元
     const savedSetting = localStorage.getItem('msgSetting');
     if (savedSetting !== null) {
         isMessageEnabled = (savedSetting === 'true');
     }
     updateToggleButton();
 
-    // QRパラメータ判定（直リンクの場合）
     const urlParams = new URLSearchParams(window.location.search);
     const scannedId = urlParams.get('id');
     if (scannedId !== null) {
@@ -151,7 +170,6 @@ function initGame() {
     renderGrid();
 }
 
-// ダイアログ（トースト通知）
 function showMessage(text) {
     if (!isMessageEnabled) return;
     const overlay = document.getElementById('custom-dialog');
@@ -161,7 +179,6 @@ function showMessage(text) {
     setTimeout(() => { overlay.classList.remove('show'); }, 2500);
 }
 
-// スキャナー処理
 document.getElementById('scan-btn').addEventListener('click', startScanner);
 document.getElementById('close-scan-btn').addEventListener('click', stopScanner);
 
@@ -188,7 +205,6 @@ function startScanner() {
 
 function stopScanner() {
     document.getElementById('reader-container').style.display = 'none';
-    
     if (html5QrCode && isScanning) {
         html5QrCode.stop().then(() => {
             isScanning = false; 
@@ -220,7 +236,6 @@ function onScanSuccess(decodedText, decodedResult) {
     }
 }
 
-// ゲーム進行
 function handleScan(index) {
     if (index < 0 || index >= deck.length) {
         showMessage("無効なカードIDです");
@@ -232,7 +247,6 @@ function handleScan(index) {
         return;
     }
 
-    // 前のターンのハズレをリセット
     if (gameState.flippedCards.length === 2) {
         gameState.flippedCards = [];
         renderGrid();
@@ -243,7 +257,6 @@ function handleScan(index) {
         return;
     }
 
-    // カードをめくる処理
     gameState.flippedCards.push(index);
     saveState();
     renderGrid();
@@ -252,7 +265,6 @@ function handleScan(index) {
     let resultMessage = `出たカード: ${card.displayName}`;
     let isPairCheckNeeded = false;
 
-    // ★修正：2枚目の場合は、結果を先取りしてメッセージを作成
     if (gameState.flippedCards.length === 2) {
         const [id1, id2] = gameState.flippedCards;
         const card1 = deck[id1];
@@ -269,28 +281,19 @@ function handleScan(index) {
 
     document.getElementById('status-text').textContent = `出たカード: ${card.displayName}`;
 
-    // ★修正：指令の発生判定（確率 35%）
-    // Math.random() < 0.35 で約3回に1回の頻度になります。
     const isMissionTriggered = Math.random() < 0.35; 
 
     if (isMissionTriggered) {
-        // 指令発生時：モーダルで「結果」と「指令」を同時に表示
         const randomMission = MOVEMENT_MISSIONS[Math.floor(Math.random() * MOVEMENT_MISSIONS.length)];
         openModal('mission_with_result', {
             result: resultMessage,
             mission: randomMission
         });
     } else {
-        // 通常時：トーストメッセージで結果のみ表示
         showMessage(resultMessage);
     }
     
-    // ペア判定処理の実行（少し遅らせて実行）
     if (isPairCheckNeeded) {
-        // 指令モーダルが出ている場合は、メッセージ重複を避けるため showMessage を抑制する引数を渡すなどの工夫が可能ですが、
-        // 今回はシンプルに checkMatch 内の showMessage も走らせます（モーダルの裏でトーストが出る形）。
-        // ただし、もし完全に消したい場合は checkMatch(!isMissionTriggered) のようにフラグを渡す必要があります。
-        // ここでは、裏で状態を確定させるために呼び出します。
         setTimeout(() => checkMatch(isMissionTriggered), 500);
     }
 }
@@ -299,7 +302,6 @@ function checkMatch(suppressMessage = false) {
     const [id1, id2] = gameState.flippedCards;
     const card1 = deck[id1];
     const card2 = deck[id2];
-
     const isMatch = (card1.rank === card2.rank);
 
     if (isMatch) {
@@ -309,7 +311,6 @@ function checkMatch(suppressMessage = false) {
             showMessage(`🎉 ペア成立！\n${card1.displayName} と ${card2.displayName}`);
         }
     } else {
-        // ハズレの場合
         if (!suppressMessage) {
             showMessage(`😢 残念、ハズレ！\n${card1.displayName} と ${card2.displayName}`);
         }
@@ -321,28 +322,21 @@ function checkMatch(suppressMessage = false) {
 function renderGrid() {
     const grid = document.getElementById('card-grid');
     grid.innerHTML = '';
-
     deck.forEach(card => {
         const div = document.createElement('div');
         div.className = 'card';
-        
         const isOpen = gameState.foundPairs.includes(card.id) || gameState.flippedCards.includes(card.id);
         const isMatched = gameState.foundPairs.includes(card.id);
-
         if (isOpen) {
-            div.classList.add('open');
-            div.classList.add(card.color);
+            div.classList.add('open', card.color);
             div.textContent = card.displayName;
         }
-        if (isMatched) {
-            div.classList.add('matched');
-        }
+        if (isMatched) div.classList.add('matched');
         grid.appendChild(div);
     });
 
     if (gameState.foundPairs.length === deck.length && deck.length > 0) {
         document.getElementById('status-text').textContent = "🎊 全制覇！おめでとう！ 🎊";
-        // クリア時は必ずお祝いを出す
         openModal('mission_with_result', {
             result: "🎊 全制覇！おめでとう！ 🎊",
             mission: "最後の指令：<br>深呼吸して、自分に拍手！👏"
@@ -350,7 +344,6 @@ function renderGrid() {
     }
 }
 
-// ユーティリティ
 const toggleBtn = document.getElementById('toggle-msg-btn');
 toggleBtn.addEventListener('click', () => {
     isMessageEnabled = !isMessageEnabled;
@@ -378,10 +371,11 @@ function saveState() {
 
 function loadState() {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-        gameState = JSON.parse(saved);
-    }
+    if (saved) gameState = JSON.parse(saved);
 }
 
-// ページ読み込み時はinitGameだけしておく（画面はタイトル）
-window.onload = initGame;
+// ページ読み込み時の処理
+window.onload = () => {
+    initGame();
+    playTitleAnimation(); // アニメーション開始
+};
