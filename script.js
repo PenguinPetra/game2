@@ -1,6 +1,4 @@
-/* =========================================
-   UI/画面遷移ロジック
-   ========================================= */
+// UI/画面遷移ロジック
 
 // タイトル演出アニメーション
 function playTitleAnimation() {
@@ -32,9 +30,114 @@ function playTitleAnimation() {
     }, 2500);
 }
 
+// 音声再生ロジック
+
+let lastPlayedVoice = null; // 最後に再生した音声を記録
+let currentAudio = null; // 現在再生中の音声オブジェクト
+let isAudioPlaying = false; // 音声再生中フラグ
+
+// 音声ファイルのパス配列
+const VOICE_FILES = [
+    'sounds/voice_1.wav', // 頑張って
+    'sounds/voice_2.wav', // もう少し (26枚後のみ)
+    'sounds/voice_3.wav', // いい調子
+    'sounds/voice_4.wav', // お疲れ様 (52枚目のみ)
+    'sounds/voice_5.wav', // 焦らないで
+    'sounds/voice_6.wav', // 完璧だね
+    'sounds/voice_7.wav', // 落ち着いて
+    'sounds/voice_8.wav'  // 半分だよ (26枚目のみ)
+];
+
+function playVoice() {
+    const foundCount = gameState.foundPairs.length;
+    const flippedCount = gameState.flippedCards.length;
+    const maxPairs = totalCards / 2;
+    
+    // 全クリアの場合
+    if (foundCount === maxPairs) {
+        playSpecificVoice(4);
+        return;
+    }
+    
+    // 半分達成の場合
+    if (foundCount === Math.floor(maxPairs / 2)) {
+        playSpecificVoice(8);
+        return;
+    }
+    
+    let availableVoices;
+    
+    if (flippedCount === 1) {
+        if (foundCount > Math.floor(maxPairs / 2)) {
+            availableVoices = [1, 2, 3, 5, 7]; // voice_2を含む
+        } else {
+            availableVoices = [1, 3, 5, 7];
+        }
+    }
+    else if (flippedCount === 2) {
+        const [id1, id2] = gameState.flippedCards;
+        const card1 = deck.find(c => c.id === id1);
+        const card2 = deck.find(c => c.id === id2);
+        const isMatch = (card1.rank === card2.rank);
+        
+        if (isMatch) {
+            availableVoices = [3, 6];
+        } else {
+            if (foundCount > Math.floor(maxPairs / 2)) {
+                availableVoices = [1, 2, 5, 7];
+            } else {
+                availableVoices = [1, 5, 7];
+            }
+        }
+    }
+    
+    let candidates = availableVoices.filter(v => v !== lastPlayedVoice);
+    
+    if (candidates.length === 0) {
+        candidates = availableVoices;
+    }
+    
+    const selectedVoice = candidates[Math.floor(Math.random() * candidates.length)];
+    playSpecificVoice(selectedVoice);
+}
+
+function playSpecificVoice(voiceNumber) {
+    // 前の音声を停止
+    if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+    }
+    
+    // 新しい音声を作成・再生
+    currentAudio = new Audio(VOICE_FILES[voiceNumber - 1]);
+    
+    // 音声読み込み完了時の処理
+    currentAudio.addEventListener('loadeddata', () => {
+        isAudioPlaying = true;
+    });
+    
+    // 音声再生完了時の処理
+    currentAudio.addEventListener('ended', () => {
+        isAudioPlaying = false;
+    });
+    
+    // エラー処理
+    currentAudio.addEventListener('error', (err) => {
+        console.error('音声再生エラー:', err);
+        isAudioPlaying = false;
+    });
+    
+    // 再生開始
+    currentAudio.play().catch(err => {
+        console.error('音声再生エラー:', err);
+        isAudioPlaying = false;
+    });
+    
+    lastPlayedVoice = voiceNumber;
+}
+
 // タイトル -> メニュー
 function showMenu() {
-    document.getElementById('bg-img').classList.add('bg-dimmed');
     document.getElementById('title-screen').classList.add('hidden');
     document.getElementById('menu-screen').classList.remove('hidden');
 }
@@ -50,12 +153,64 @@ function startGame() {
     }
 }
 
+// メニュー -> カード枚数選択画面
+function showCardCountSelection() {
+    document.getElementById('menu-screen').classList.add('hidden');
+    document.getElementById('card-count-screen').classList.remove('hidden');
+}
+
+// カード枚数選択 -> メニュー
+function backToMenu() {
+    // ゲーム状態をリセット
+    resetGameState();
+    
+    document.getElementById('card-count-screen').classList.add('hidden');
+    document.getElementById('menu-screen').classList.remove('hidden');
+}
+
+// ゲーム状態リセット関数
+function resetGameState() {
+    gameState = {
+        foundPairs: [],
+        flippedCards: []
+    };
+    localStorage.removeItem(STORAGE_KEY);
+    deck = [];
+    
+    // ステータステキストもリセット
+    const statusText = document.getElementById('status-text');
+    if (statusText) {
+        statusText.textContent = "QRコードをスキャンしよう！";
+    }
+}
+
+// カード枚数選択 -> ゲーム画面
+function startGameWithCount() {
+    // 新しいゲームを始める前に状態をリセット
+    resetGameState();
+    
+    totalCards = parseInt(document.getElementById('game-card-count').value);
+    document.getElementById('card-count-screen').classList.add('hidden');
+    document.getElementById('game-screen').classList.remove('hidden');
+    document.getElementById('bg-img').classList.add('bg-dimmed');
+    initGame();
+}
+
 // ゲーム画面 -> タイトル（戻るボタン）
 function backToTitle() {
-    stopScanner(); // カメラ停止
-    document.getElementById('game-screen').classList.add('hidden');
-    document.getElementById('title-screen').classList.remove('hidden');
-    document.getElementById('bg-img').classList.remove('bg-dimmed');
+    if (confirm("ゲームを中断してタイトルに戻りますか？")) {
+        // ゲーム状態をリセット
+        resetGameState();
+        
+        document.getElementById('game-screen').classList.add('hidden');
+        document.getElementById('card-count-screen').classList.add('hidden');
+        document.getElementById('menu-screen').classList.add('hidden');
+        document.getElementById('title-screen').classList.remove('hidden');
+        document.getElementById('bg-img').classList.remove('bg-dimmed');
+        if (html5QrCode && isScanning) {
+            stopScanner();
+        }
+    }
 }
 
 // モーダル制御
@@ -69,7 +224,7 @@ function openModal(type, content = null) {
 
     if (type === 'rules') {
         title.innerText = "ルール説明";
-        body.innerHTML = "<p style='text-align:left;'>1. 部屋に設置したQRコードまで移動しよう。<br>2. 「スキャン」ボタンでQRを読み取る。<br>3. トランプが表示されるよ。<br>4. 同じ数字を見つけてペアを作ろう！</p>";
+        body.innerHTML = "<p style='text-align:left;'>準備. 「QRコード生成」から使用する枚数のQRコードを選択し印刷しよう。<br>QRコードを部屋に設置しよう。1. 部屋に設置したQRコードまで移動しよう。<br>2. 「スキャン」ボタンでQRを読み取る。<br>3. トランプが表示されるよ。<br>4. 同じ数字を見つけてペアを作ろう！</p>";
     } else if (type === 'settings') {
         title.innerText = "設定";
         body.innerHTML = "<p>BGM: ON<br>難易度: ノーマル<br>（現在変更できません）</p>";
@@ -126,6 +281,7 @@ const MOVEMENT_MISSIONS = [
 ];
 
 let deck = [];
+let totalCards = 52; // デフォルト52枚
 let gameState = {
     foundPairs: [],
     flippedCards: []
@@ -137,37 +293,66 @@ let isScanning = false;
 
 function initGame() {
     deck = [];
-    let idCounter = 0;
-    suits.forEach(suit => {
-        ranks.forEach(rank => {
-            deck.push({
-                id: idCounter++,
-                suit: suit.mark,
-                color: suit.color,
-                rank: rank,
-                displayName: `${suit.mark}${rank}`
-            });
+    const pairCount = totalCards / 2;
+    
+    // ペアごとにカードを生成
+    for (let rankIndex = 0; rankIndex < 13 && rankIndex < pairCount; rankIndex++) {
+        // スペード（ID: 0-12）
+        const spadeId = 0 * 13 + rankIndex;
+        deck.push({
+            id: spadeId,
+            suit: suits[0].mark,
+            rank: ranks[rankIndex],
+            color: suits[0].color,
+            suitName: suits[0].name,
+            displayName: `${suits[0].mark} ${ranks[rankIndex]}`
         });
-    });
+        
+        // クラブ（ID: 13-25）
+        const clubId = 1 * 13 + rankIndex;
+        deck.push({
+            id: clubId,
+            suit: suits[1].mark,
+            rank: ranks[rankIndex],
+            color: suits[1].color,
+            suitName: suits[1].name,
+            displayName: `${suits[1].mark} ${ranks[rankIndex]}`
+        });
+    }
+    
+    // 26ペア以上の場合
+    if (pairCount > 13) {
+        for (let rankIndex = 0; rankIndex < 13 && rankIndex < (pairCount - 13); rankIndex++) {
+            // ハート（ID: 26-38）
+            const heartId = 2 * 13 + rankIndex;
+            deck.push({
+                id: heartId,
+                suit: suits[2].mark,
+                rank: ranks[rankIndex],
+                color: suits[2].color,
+                suitName: suits[2].name,
+                displayName: `${suits[2].mark} ${ranks[rankIndex]}`
+            });
+            
+            // ダイヤ（ID: 39-51）
+            const diamondId = 3 * 13 + rankIndex;
+            deck.push({
+                id: diamondId,
+                suit: suits[3].mark,
+                rank: ranks[rankIndex],
+                color: suits[3].color,
+                suitName: suits[3].name,
+                displayName: `${suits[3].mark} ${ranks[rankIndex]}`
+            });
+        }
+    }
 
     loadState();
-    
-    const savedSetting = localStorage.getItem('msgSetting');
-    if (savedSetting !== null) {
-        isMessageEnabled = (savedSetting === 'true');
-    }
-    updateToggleButton();
-
-    const urlParams = new URLSearchParams(window.location.search);
-    const scannedId = urlParams.get('id');
-    if (scannedId !== null) {
-        showMenu(); 
-        startGame();
-        handleScan(parseInt(scannedId));
-        window.history.replaceState({}, document.title, window.location.pathname);
-    }
-
     renderGrid();
+    updateToggleButton();
+    
+    // ステータステキストを初期化
+    document.getElementById('status-text').textContent = "QRコードをスキャンしよう！";
 }
 
 function showMessage(text) {
@@ -236,14 +421,17 @@ function onScanSuccess(decodedText, decodedResult) {
     }
 }
 
-function handleScan(index) {
-    if (index < 0 || index >= deck.length) {
-        showMessage("無効なカードIDです");
+function handleScan(scannedId) {
+    // デッキ内に該当するIDのカードがあるか確認
+    const cardIndex = deck.findIndex(card => card.id === scannedId);
+    
+    if (cardIndex === -1) {
+        showMessage("このカードは今回のゲームでは使用しません");
         return;
     }
     
-    if (gameState.foundPairs.includes(index)) {
-        showMessage(`【${deck[index].displayName}】\n獲得済みです`);
+    if (gameState.foundPairs.includes(scannedId)) {
+        showMessage(`【${deck[cardIndex].displayName}】\n獲得済みです`);
         return;
     }
 
@@ -252,23 +440,31 @@ function handleScan(index) {
         renderGrid();
     }
 
-    if (gameState.flippedCards.includes(index)) {
-        showMessage(`【${deck[index].displayName}】\n既にめくっています`);
+    if (gameState.flippedCards.includes(scannedId)) {
+        showMessage(`【${deck[cardIndex].displayName}】\n既にめくっています`);
         return;
     }
 
-    gameState.flippedCards.push(index);
+    gameState.flippedCards.push(scannedId);
     saveState();
     renderGrid();
 
-    const card = deck[index];
+    const card = deck[cardIndex];
     let resultMessage = `出たカード: ${card.displayName}`;
     let isPairCheckNeeded = false;
 
     if (gameState.flippedCards.length === 2) {
         const [id1, id2] = gameState.flippedCards;
-        const card1 = deck[id1];
-        const card2 = deck[id2];
+        
+        const card1 = deck.find(c => c.id === id1);
+        const card2 = deck.find(c => c.id === id2);
+        
+        if (!card1 || !card2) {
+            console.error('カードが見つかりません！');
+            showMessage("エラーが発生しました");
+            return;
+        }
+        
         if (card1.rank === card2.rank) {
             resultMessage = `🎉 ペア成立！\n${card1.displayName} と ${card2.displayName}`;
         } else {
@@ -292,6 +488,9 @@ function handleScan(index) {
     } else {
         showMessage(resultMessage);
     }
+
+    // 音声再生
+    playVoice();
     
     if (isPairCheckNeeded) {
         setTimeout(() => checkMatch(isMissionTriggered), 500);
@@ -300,8 +499,15 @@ function handleScan(index) {
 
 function checkMatch(suppressMessage = false) {
     const [id1, id2] = gameState.flippedCards;
-    const card1 = deck[id1];
-    const card2 = deck[id2];
+    
+    const card1 = deck.find(c => c.id === id1);
+    const card2 = deck.find(c => c.id === id2);
+    
+    if (!card1 || !card2) {
+        console.error('checkMatch: カードが見つかりません');
+        return;
+    }
+    
     const isMatch = (card1.rank === card2.rank);
 
     if (isMatch) {
@@ -335,7 +541,10 @@ function renderGrid() {
         grid.appendChild(div);
     });
 
-    if (gameState.foundPairs.length === deck.length && deck.length > 0) {
+    // 全制覇判定：デッキが存在し、かつ全カードが獲得済みの場合のみ
+    const isAllCleared = deck.length > 0 && gameState.foundPairs.length === deck.length;
+    
+    if (isAllCleared) {
         document.getElementById('status-text').textContent = "🎊 全制覇！おめでとう！ 🎊";
         openModal('mission_with_result', {
             result: "🎊 全制覇！おめでとう！ 🎊",
@@ -358,9 +567,8 @@ function updateToggleButton() {
 
 document.getElementById('reset-btn').addEventListener('click', () => {
     if(confirm("リセットしますか？")) {
-        localStorage.removeItem(STORAGE_KEY);
-        gameState = { foundPairs: [], flippedCards: [] };
-        renderGrid();
+        resetGameState();
+        initGame();
         showMessage("リセットしました");
     }
 });
