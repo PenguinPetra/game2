@@ -1,16 +1,26 @@
 // bgm.js
 (function() {
-    const bgmPath = 'oyubgm_107_happy_lemonade_master.mp3'; // ファイルパスを適宜修正してください
+    const bgmPath = 'oyubgm_107_happy_lemonade_master.mp3'; 
     const bgm = new Audio(bgmPath);
-    bgm.loop = true;      // ループ再生を有効にする
-    bgm.volume = 0.5;    // 音量を50%に設定
 
-    // ブラウザの制限により、ユーザーが画面をクリックした後に再生を開始する
-    window.addEventListener('click', () => {
-        if (bgm.paused) {
-            bgm.play().catch(error => {
-                console.log("BGMの再生に失敗しました。ユーザー操作が必要です:", error);
-            });
+    bgm.loop = true;      // ループ再生（途中で終わったら再度流す）
+    bgm.volume = 0.5;    // 音量
+
+    // 元々の showMenu 関数をバックアップ
+    const originalShowMenu = window.showMenu;
+
+    // showMenu 関数を上書きして、BGM再生機能を追加
+    window.showMenu = function() {
+        // BGMを再生
+        bgm.play().then(() => {
+            console.log("BGMの再生を開始しました。");
+        }).catch(error => {
+            console.log("再生に失敗しました:", error);
+        });
+
+        // 本来の画面遷移処理（script.jsにあるshowMenu）を実行
+        if (typeof originalShowMenu === 'function') {
+            originalShowMenu();
         }
-    }, { once: true }); // 最初の一回だけ実行
+    };
 })();
