@@ -1,26 +1,19 @@
 // bgm.js
-(function() {
-    const bgmPath = 'bgm.mp3'; 
-    const bgm = new Audio(bgmPath);
 
-    bgm.loop = true;      // ループ再生（途中で終わったら再度流す）
-    bgm.volume = 0.5;    // 音量
+// グローバル変数として定義
+let bgm = null;
 
-    // 元々の showMenu 関数をバックアップ
-    const originalShowMenu = window.showMenu;
-
-    // showMenu 関数を上書きして、BGM再生機能を追加
-    window.showMenu = function() {
-        // BGMを再生
+function playBgm() {
+    if (bgm === null) {
+        // ファイル名を bgm.mp3 に変更。パスが通るよう ./ を追加
+        bgm = new Audio('./bgm.mp3');
+        bgm.loop = true;
+        bgm.volume = 0.5;
+        
         bgm.play().then(() => {
-            console.log("BGMの再生を開始しました。");
+            console.log("BGM再生成功");
         }).catch(error => {
-            console.log("再生に失敗しました:", error);
+            console.error("BGM再生失敗:", error);
         });
-
-        // 本来の画面遷移処理（script.jsにあるshowMenu）を実行
-        if (typeof originalShowMenu === 'function') {
-            originalShowMenu();
-        }
-    };
-})();
+    }
+}
