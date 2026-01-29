@@ -1,6 +1,6 @@
 // bgm.js
 (function() {
-    const bgmPath = 'sounds/oyubgm_107_happy_lemonade_master.mp3'; // ファイルパスを適宜修正してください
+    const bgmPath = 'oyubgm_107_happy_lemonade_master.mp3'; // ファイルパスを適宜修正してください
     const bgm = new Audio(bgmPath);
     bgm.loop = true;      // ループ再生を有効にする
     bgm.volume = 0.5;    // 音量を50%に設定
